@@ -132,3 +132,9 @@ message RpbBucketProps {
     }
     optional RpbReplMode repl = 24;
 }
+
+// Authentication request
+message RpbAuthReq {
+    required bytes user = 1;
+    required bytes password = 2;
+}
