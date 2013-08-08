@@ -125,6 +125,10 @@ msg_type(50) -> rpbcounterupdatereq;
 msg_type(51) -> rpbcounterupdateresp;
 msg_type(52) -> rpbcountergetreq;
 msg_type(53) -> rpbcountergetresp;
+%% internal message codes, grow downwards from 255
+msg_type(253) -> rpbauthreq;
+msg_type(254) -> rpbauthresp;
+msg_type(255) -> rpbstarttls;
 msg_type(_) -> undefined.
 
 %% @doc Converts a symbolic message name into a message code. Replaces
@@ -166,13 +170,19 @@ msg_code(rpbcsbucketresp)        -> 41;
 msg_code(rpbcounterupdatereq)    -> 50;
 msg_code(rpbcounterupdateresp)   -> 51;
 msg_code(rpbcountergetreq)       -> 52;
-msg_code(rpbcountergetresp)      -> 53.
+msg_code(rpbcountergetresp)      -> 53;
+%% internal message codes, grow downwards from 255
+msg_code(rpbauthreq)             -> 253;
+msg_code(rpbauthresp)            -> 254;
+msg_code(rpbstarttls)            -> 255.
+
 
 %% @doc Selects the appropriate PB decoder for a message code.
 -spec decoder_for(pos_integer()) -> module().
 decoder_for(N) when N >= 0, N < 3;
                     N == 7; N == 8;
-                    N == 29; N == 30 ->
+                    N == 29; N == 30;
+                    N >= 253 ->
     riak_pb;
 decoder_for(N) when N >= 3, N < 7;
                     N >= 9, N =< 26;
