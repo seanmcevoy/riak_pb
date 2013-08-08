@@ -4,9 +4,8 @@
 
     <groupId>com.basho.riak.protobuf</groupId>
     <artifactId>riak-pb</artifactId>
-    <version>1.4.1-SNAPSHOT</version>
     <packaging>bundle</packaging>
-
+    <version>2.0.0-SNAPSHOT</version>
     <name>Riak Protocol Buffers</name>
     <description>Protocol buffers used to communicate with Riak</description>
     <url>https://github.com/basho/riak_pb</url>
