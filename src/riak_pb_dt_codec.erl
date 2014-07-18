@@ -49,17 +49,20 @@
 -type counter_value() :: integer().
 -type set_value() :: [ binary() ].
 -type register_value() :: binary().
+-type intreg_value() :: integer() | undefined.
+-type rangereg_value() :: [{atom(), integer()}].
 -type flag_value() :: boolean().
 -type map_entry() :: {map_field(), embedded_value()}.
 -type map_field() :: {binary(), embedded_type()}.
 -type map_value() :: [ map_entry() ].
 -type embedded_value() :: counter_value() | set_value() | register_value() | flag_value() | map_value().
--type toplevel_value() :: counter_value() | set_value() | map_value() | undefined.
+-type toplevel_value() :: counter_value() | set_value() | map_value() | intreg_value() | rangereg_value() | undefined.
 -type fetch_response() :: {toplevel_type(), toplevel_value(), context()}.
 
 %% Type names as atoms
 -type embedded_type() :: counter | set | register | flag | map.
--type toplevel_type() :: counter | set | map.
+-type toplevel_type() :: counter | set | map | maxreg | minreg | rangereg.
+-type all_type()      :: toplevel_type() | embedded_type().
 
 %% Operations
 -type counter_op() :: increment | decrement | {increment | decrement, integer()}.
@@ -67,10 +70,11 @@
 -type set_op() :: simple_set_op() | {update, [simple_set_op()]}.
 -type flag_op() :: enable | disable.
 -type register_op() :: {assign, binary()}.
+-type intreg_op() :: {assign, integer()}.
 -type simple_map_op() :: {remove, map_field()} | {update, map_field(), embedded_type_op()}.
 -type map_op() :: simple_map_op() | {update, [simple_map_op()]}.
 -type embedded_type_op() :: counter_op() | set_op() | register_op() | flag_op() | map_op().
--type toplevel_op() :: counter_op() | set_op() | map_op().
+-type toplevel_op() :: counter_op() | set_op() | map_op() | intreg_op().
 -type update() :: {toplevel_type(), toplevel_op(), context()}.
 
 %% Request options
@@ -89,7 +93,7 @@
                      include_context | {include_context, boolean()}.
 
 %% Server-side type<->module mappings
--type type_mappings() :: [{embedded_type(), module()}].
+-type type_mappings() :: [{all_type(), module()}].
 
 
 %% =========================
@@ -166,10 +170,13 @@ decode_type(PBType, Mods) ->
     proplists:get_value(AtomType, Mods, AtomType).
 
 %% @doc Decodes a PB message type name into an atom.
--spec decode_type(atom()) -> atom().
+-spec decode_type(atom()) -> all_type().
 decode_type('COUNTER')  -> counter;
 decode_type('SET')      -> set;
 decode_type('REGISTER') -> register;
+decode_type('MAXREG')   -> maxreg;
+decode_type('MINREG')   -> minreg;
+decode_type('RANGEREG') -> rangereg;
 decode_type('FLAG')     -> flag;
 decode_type('MAP')      -> map.
 
@@ -185,10 +192,13 @@ encode_type(TypeOrMod, Mods) ->
     end.
 
 %% @doc Encodes an atom type name into the PB message equivalent.
--spec encode_type(atom()) -> atom().
+-spec encode_type(all_type()) -> atom().
 encode_type(counter)  -> 'COUNTER';
 encode_type(set)      -> 'SET';
 encode_type(register) -> 'REGISTER';
+encode_type(maxreg)   -> 'MAXREG';
+encode_type(minreg)   -> 'MINREG';
+encode_type(rangereg) -> 'RANGEREG';
 encode_type(flag)     -> 'FLAG';
 encode_type(map)      -> 'MAP'.
 
@@ -196,6 +206,29 @@ encode_type(map)      -> 'MAP'.
 encode_flag_value(on) -> true;
 encode_flag_value(off) -> false;
 encode_flag_value(Other) -> Other.
+
+encode_rangereg_entry(Value) -> encode_rangereg_entry(#rangeregentry{}, Value).
+
+encode_rangereg_entry(Entry, []) -> Entry;
+encode_rangereg_entry(Entry, [{max, Value} | Tail]) ->
+    encode_rangereg_entry(Entry#rangeregentry{max_value=Value}, Tail);
+encode_rangereg_entry(Entry, [{min, Value} | Tail]) ->
+    encode_rangereg_entry(Entry#rangeregentry{min_value=Value}, Tail);
+encode_rangereg_entry(Entry, [{first, Value} | Tail]) ->
+    encode_rangereg_entry(Entry#rangeregentry{first_value=Value}, Tail);
+encode_rangereg_entry(Entry, [{last, Value} | Tail]) ->
+    encode_rangereg_entry(Entry#rangeregentry{last_value=Value}, Tail);
+encode_rangereg_entry(Entry, [_|Tail]) ->
+    encode_rangereg_entry(Tail, Entry).
+
+decode_rangereg_entry(RRE) ->
+    [
+     {max,   RRE#rangeregentry.max_value},
+     {min,   RRE#rangeregentry.min_value},
+     {first, RRE#rangeregentry.first_value},
+     {last,  RRE#rangeregentry.last_value}
+    ].
+
 
 %% ========================
 %% FETCH REQUEST / RESPONSE
@@ -254,7 +287,17 @@ decode_fetch_response(#dtfetchresp{context=Context, type='SET',
     {set, Val, Context};
 decode_fetch_response(#dtfetchresp{context=Context, type='MAP',
                                    value=#dtvalue{map_value=Val}}) ->
-    {map, [ decode_map_entry(Entry) || Entry <- Val ], Context}.
+    {map, [ decode_map_entry(Entry) || Entry <- Val ], Context};
+decode_fetch_response(#dtfetchresp{context=Context, type='MAXREG',
+                                   value=#dtvalue{maxreg_value=Val}}) ->
+    {maxreg, Val, Context};
+decode_fetch_response(#dtfetchresp{context=Context, type='MINREG',
+                                   value=#dtvalue{minreg_value=Val}}) ->
+    {minreg, Val, Context};
+decode_fetch_response(#dtfetchresp{context=Context, type='RANGEREG',
+                                   value=#dtvalue{rangereg_value=Val}}) ->
+    {rangereg, decode_rangereg_entry(Val), Context}.
+
 
 %% @doc Encodes the result of a fetch request into a FetchResponse message.
 -spec encode_fetch_response(toplevel_type(), toplevel_value(), context()) -> #dtfetchresp{}.
@@ -273,7 +316,13 @@ encode_fetch_response(Type, Value, Context, Mods) ->
         set ->
             Response#dtfetchresp{value=#dtvalue{set_value=Value}};
         map ->
-            Response#dtfetchresp{value=#dtvalue{map_value=[encode_map_entry(Entry, Mods) || Entry <- Value]}}
+            Response#dtfetchresp{value=#dtvalue{map_value=[encode_map_entry(Entry, Mods) || Entry <- Value]}};
+        maxreg ->
+            Response#dtfetchresp{value=#dtvalue{maxreg_value=Value}};
+        minreg ->
+            Response#dtfetchresp{value=#dtvalue{minreg_value=Value}};
+        rangereg ->
+            Response#dtfetchresp{value=#dtvalue{rangereg_value=encode_rangereg_entry(Value)}}
     end.
 
 %% =========================
@@ -326,15 +375,37 @@ encode_set_update({remove, Member}, #setop{removes=R}=S) when is_binary(Member) 
 encode_set_update({remove_all, Members}, #setop{removes=R}=S) when is_list(Members) ->
     S#setop{removes=Members++R}.
 
+-spec decode_maxreg_op(#maxregop{}) -> intreg_op().
+decode_maxreg_op(#maxregop{value=Value}) ->
+    {assign, Value}.
+
+-spec encode_maxreg_op(intreg_op()) -> #maxregop{}.
+encode_maxreg_op({assign, Value}) ->
+    #maxregop{value=Value}.
+
+-spec decode_minreg_op(#minregop{}) -> intreg_op().
+decode_minreg_op(#minregop{value=Value}) ->
+    {assign, Value}.
+
+-spec encode_minreg_op(intreg_op()) -> #minregop{}.
+encode_minreg_op({assign, Value}) ->
+    #minregop{value=Value}.
+
+-spec decode_rangereg_op(#rangeregop{}) -> intreg_op().
+decode_rangereg_op(#rangeregop{value=Value}) ->
+    {assign, Value}.
+
+-spec encode_rangereg_op(intreg_op()) -> #rangeregop{}.
+encode_rangereg_op({assign, Value}) ->
+    #rangeregop{value=Value}.
 
 %% @doc Decodes a operation name from a PB message into an atom.
--spec decode_flag_op(atom()) -> atom().
-
+-spec decode_flag_op(atom()) -> flag_op().
 decode_flag_op('ENABLE')  -> enable;
 decode_flag_op('DISABLE') -> disable.
 
 %% @doc Encodes an atom operation name into the PB message equivalent.
--spec encode_flag_op(atom()) -> atom().
+-spec encode_flag_op(flag_op()) -> atom().
 encode_flag_op(enable)  -> 'ENABLE';
 encode_flag_op(disable) -> 'DISABLE'.
 
@@ -413,7 +484,16 @@ decode_operation(#dtop{counter_op=#counterop{}=Op}, _) ->
 decode_operation(#dtop{set_op=#setop{}=Op}, _) ->
     decode_set_op(Op);
 decode_operation(#dtop{map_op=#mapop{}=Op}, Mods) ->
-    decode_map_op(Op, Mods).
+    decode_map_op(Op, Mods);
+decode_operation(#dtop{maxreg_op=#maxregop{}=Op}, _) ->
+    decode_maxreg_op(Op);
+decode_operation(#dtop{minreg_op=#minregop{}=Op}, _) ->
+    decode_minreg_op(Op);
+decode_operation(#dtop{rangereg_op=#rangeregop{}=Op}, _) ->
+    decode_rangereg_op(Op).
+
+
+
 
 %% @doc Encodes a datatype-specific operation into a DtOperation message.
 -spec encode_operation(toplevel_op(), toplevel_type()) -> #dtop{}.
@@ -422,7 +502,13 @@ encode_operation(Op, counter) ->
 encode_operation(Op, set) ->
     #dtop{set_op=encode_set_op(Op)};
 encode_operation(Op, map) ->
-    #dtop{map_op=encode_map_op(Op)}.
+    #dtop{map_op=encode_map_op(Op)};
+encode_operation(Op, maxreg) ->
+    #dtop{maxreg_op=encode_maxreg_op(Op)};
+encode_operation(Op, minreg) ->
+    #dtop{minreg_op=encode_minreg_op(Op)};
+encode_operation(Op, rangereg) ->
+    #dtop{rangereg_op=encode_rangereg_op(Op)}.
 
 %% @doc Returns the type that the DtOp message expects to be performed
 %% on.
@@ -432,7 +518,13 @@ operation_type(#dtop{counter_op=#counterop{}}) ->
 operation_type(#dtop{set_op=#setop{}}) ->
     set;
 operation_type(#dtop{map_op=#mapop{}}) ->
-    map.
+    map;
+operation_type(#dtop{maxreg_op=#maxregop{}}) ->
+    maxreg;
+operation_type(#dtop{minreg_op=#minregop{}}) ->
+    minreg;
+operation_type(#dtop{rangereg_op=#rangeregop{}}) ->
+    rangereg.
 
 %% @doc Encodes an update request into a DtUpdate message.
 -spec encode_update_request({binary(), binary()}, binary() | undefined, update()) -> #dtupdatereq{}.
