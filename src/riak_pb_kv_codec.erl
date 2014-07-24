@@ -27,8 +27,8 @@
 
 -module(riak_pb_kv_codec).
 
--include("riak_kv_pb.hrl").
--include("riak_pb_kv_codec.hrl").
+-include_lib("riak_pb/include/riak_kv_pb.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 -import(riak_pb_codec, [to_list/1, decode_bool/1, encode_bool/1]).
 
