@@ -1,8 +1,19 @@
 {application, riak_pb,
  [
   {description, "Riak Protocol Buffers Messages"},
-  {vsn, git},
+  {vsn, "%VSN%"},
   {registered, []},
+  {modules, [riak_dt_pb,
+             riak_kv_pb,
+             riak_pb,
+             riak_pb_codec,
+             riak_pb_dt_codec,
+             riak_pb_kv_codec,
+             riak_pb_messages,
+             riak_pb_search_codec,
+             riak_search_pb,
+             riak_yokozuna_pb
+            ]},
   {applications, [
                   kernel,
                   stdlib,
