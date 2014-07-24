@@ -3,16 +3,12 @@
   {description, "Riak Protocol Buffers Messages"},
   {vsn, "%VSN%"},
   {registered, []},
-  {modules, [riak_dt_pb,
-             riak_kv_pb,
+  {modules, [riak_kv_pb,
              riak_pb,
              riak_pb_codec,
-             riak_pb_dt_codec,
              riak_pb_kv_codec,
-             riak_pb_messages,
              riak_pb_search_codec,
-             riak_search_pb,
-             riak_yokozuna_pb
+             riak_search_pb
             ]},
   {applications, [
                   kernel,
