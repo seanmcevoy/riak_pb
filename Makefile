@@ -4,9 +4,9 @@ all: deps compile
 
 deps: erl_deps
 
-compile: erl_compile python_compile java_compile
+compile: erl_compile
 
-clean: erl_clean python_clean java_clean
+clean: erl_clean
 
 distclean: clean
 	rm -rf dist
